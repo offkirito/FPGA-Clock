@@ -1,7 +1,7 @@
 module clockss
 (
-	
-	
+	input reset,
+	output reg []S
 );
 
 reg [31:0] clk_divider; //contador 32-bit para dividir los 50Mhz a 1Hz.
@@ -32,14 +32,22 @@ always @ (posedge clk or posedge reset) begin
 
     end
 
-  end
+end
 
 end
 
 
+always @ (posedge slow_clk or posedge reset) begin
+	 if (reset) begin
+	 
+    slow_clk <= 0;
+	 S <= 0
+	 
 
+  end 
+  else begin
 
-
+	end
+	
  
-
- always @ (posedge slow_clk or posedge reset) begin
+end
