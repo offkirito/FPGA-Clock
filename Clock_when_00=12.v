@@ -92,7 +92,14 @@ end
 
 // Extraemos los bits más altos para que cuente 00, 01, 10, 11 lentamente
 wire [1:0] selector = refresh_counter[16:15];
+// Creamos esto dos wire para hacer que el front end cambie dependiendo las variables de bcd
+wire [3:0] uni_h;
+wire [3:0] dec_h;
 
+// Si uni_h y dec_h son 0 se les asigna 1 y 2 respectivamente, else se les asigna el valor que se tienen guaradado en bcd
+assign uni_h = (bcd[2] == 4'b0 && bcd[3] == 4'b0) ? 4'b1 : bcd[2];
+assign dec_h = (bcd[2] == 4'b0 && bcd[3] == 4'b0) ? 4'b2 : bcd[3];
+    
 // --- 7. MULTIPLEXOR (Alterna las pantallas) ---
 // Lógica activa en BAJO (0 enciende la pantalla, 1 la apaga)
 always @(*) begin
@@ -106,11 +113,11 @@ always @(*) begin
     end 
     else if (selector == 2'b10) begin
         display_activo = 4'b1011; // Enciende Dígito 3
-        numero_actual  = bcd[2];  // Manda Unidades de Hora
+        numero_actual  = uni_h;  // Manda Unidades de Hora
     end 
     else begin // 2'b11
         display_activo = 4'b0111; // Enciende Dígito 4 (Izquierda)
-        numero_actual  = bcd[3];  // Manda Decenas de Hora
+        numero_actual  = dec_h;  // Manda Decenas de Hora
     end
 end
 
