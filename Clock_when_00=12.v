@@ -98,8 +98,8 @@ wire [3:0] uni_h;
 wire [3:0] dec_h;
 
 // Si uni_h y dec_h son 0 se les asigna 1 y 2 respectivamente, else se les asigna el valor que se tienen guaradado en bcd
-assign uni_h = (bcd[2] == 4'b0 && bcd[3] == 4'b0) ? 4'b1 : bcd[2];
-assign dec_h = (bcd[2] == 4'b0 && bcd[3] == 4'b0) ? 4'b2 : bcd[3];
+    assign uni_h = (bcd[2] == 4'b0 && bcd[3] == 4'b0) ? 4'b0001 : bcd[2];
+    assign dec_h = (bcd[2] == 4'b0 && bcd[3] == 4'b0) ? 4'b0010 : bcd[3];
     
 // --- 7. MULTIPLEXOR (Alterna las pantallas) ---
 // Lógica activa en BAJO (0 enciende la pantalla, 1 la apaga)
