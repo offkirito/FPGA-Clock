@@ -92,6 +92,7 @@ end
 
 // Extraemos los bits más altos para que cuente 00, 01, 10, 11 lentamente
 wire [1:0] selector = refresh_counter[16:15];
+
 // Creamos esto dos wire para hacer que el front end cambie dependiendo las variables de bcd
 wire [3:0] uni_h;
 wire [3:0] dec_h;
