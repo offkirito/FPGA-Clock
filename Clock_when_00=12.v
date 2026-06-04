@@ -23,7 +23,7 @@ assign dig_sel = display_activo;
 assign seg = leds;
 
 // --- 3. BANDERAS DE TIEMPO ---
-wire tick_1hz   = (clk_divider == 32'd999);     // 1 segundo
+wire tick_1hz   = (clk_divider == 32'd99999);     // 1 segundo
 wire tick_1min  = (tick_1hz   && sec == 6'b111011);  // 59 seg
 wire tick_10min = (tick_1min  && bcd[0] == 4'b1001); // 9 min
 wire tick_1hr   = (tick_10min && bcd[1] == 4'b0101); // 50 min
