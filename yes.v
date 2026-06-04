@@ -1,115 +1,139 @@
-module clock_bcd_7seg
+module clockss
 (
-    input clk,
-    input reset,
-    input pause,
-    output [6:0] seg,      // Segmentos a,b,c,d,e,f,g (1 = encendido)
-    output [3:0] dig_sel   // Selector de dígito (0 = encendido para cátodo común)
+    input clk,          // Reloj principal (50MHz)
+    input reset,        // Botón de reinicio (Activo en bajo / 0)
+    input pause,        // Interruptor de pausa
+    output [3:0] dig_sel, // Activa qué pantalla encender (Dígitos 1 al 4)
+    output [6:0] seg      // Enciende los LEDs físicos (Segmentos a-g)
 );
 
-// Arreglo para los 4 displays BCD
-reg [3:0] bcd [0:3]; 
+// --- 1. MEMORIA DEL RELOJ ---
+reg [3:0] bcd [0:3];     // bcd[0]=min_u, bcd[1]=min_t, bcd[2]=hr_u, bcd[3]=hr_t
+reg [31:0] clk_divider;  // Cuenta para 1 segundo
+reg [5:0] sec;           // Cuenta hasta 59 segundos
 
-// Variables internas para el reloj
-reg [31:0] clk_divider;
-reg [5:0] sec; 
+// --- 2. MEMORIA PARA LA PANTALLA (MUX Y DECODIFICADOR) ---
+reg [16:0] refresh_counter; // Contador rápido para alternar pantallas
+reg [3:0] display_activo;   // Variable temporal para el dig_sel
+reg [3:0] numero_actual;    // Variable que le pasamos al traductor de LEDs
+reg [6:0] leds;             // Variable temporal para los segmentos
 
-// --- BANDERAS DEL RELOJ (Dataflow) ---
-wire tick_1hz   = (clk_divider == 32'd49999999);
-wire tick_1min  = (tick_1hz   && sec == 6'b111011);      // 59
-wire tick_10min = (tick_1min  && bcd[0] == 4'b1001);     // 9
-wire tick_1hr   = (tick_10min && bcd[1] == 4'b0101);     // 5
+// Conexión de variables temporales a los pines físicos de salida
+assign dig_sel = display_activo;
+assign seg = leds;
 
-// --- RELOJ Y CONTROL BCD ---
-always @(posedge clk or posedge reset) begin
-    if (reset) begin
-        clk_divider <= 32'd0;       
-        sec         <= 6'b000000;   
-        bcd[0]      <= 4'b0000;
-        bcd[1]      <= 4'b0000;
-        bcd[2]      <= 4'b0000;
-        bcd[3]      <= 4'b0000;
+// --- 3. BANDERAS DE TIEMPO ---
+wire tick_1hz   = (clk_divider == 32'd49999999);     // 1 segundo
+wire tick_1min  = (tick_1hz   && sec == 6'b111011);  // 59 seg
+wire tick_10min = (tick_1min  && bcd[0] == 4'b1001); // 9 min
+wire tick_1hr   = (tick_10min && bcd[1] == 4'b0101); // 50 min
+
+// --- 4. CONTADOR DE SEGUNDOS ---
+// Cambiamos a negedge porque tu botón manda 0 al presionarse
+always @(posedge clk or negedge reset) begin
+    if (!reset) begin // Si el botón manda 0, reinicia
+        clk_divider <= 32'd0;
+        sec         <= 6'b000000;
     end else if (!pause) begin
-        
-        // Segundos
         if (tick_1hz) begin
             clk_divider <= 32'd0;
-            if (sec == 6'b111011) sec <= 6'b000000;
-            else sec <= sec + 6'b000001;
+            if (sec == 6'b111011) begin
+                sec <= 6'b000000; // Reinicia a 0
+            end else begin
+                sec <= sec + 6'b000001; // Suma 1
+            end
         end else begin
-            clk_divider <= clk_divider + 32'd1; 
+            clk_divider <= clk_divider + 32'd1;
         end
-        
-        // Minutos y Horas
+    end
+end
+
+// --- 5. CONTADOR DE MINUTOS Y HORAS ---
+always @(posedge clk or negedge reset) begin
+    if (!reset) begin // Si el botón manda 0, reinicia
+        bcd[0] <= 4'b0000;
+        bcd[1] <= 4'b0000;
+        bcd[2] <= 4'b0000;
+        bcd[3] <= 4'b0000;
+    end else if (!pause) begin
+        // Unidades de minuto
         if (tick_1min) begin
             if (bcd[0] == 4'b1001) bcd[0] <= 4'b0000;
-            else bcd[0] <= bcd[0] + 4'b0001;
+            else                   bcd[0] <= bcd[0] + 4'b0001;
         end
-        
+        // Decenas de minuto
         if (tick_10min) begin
             if (bcd[1] == 4'b0101) bcd[1] <= 4'b0000;
-            else bcd[1] <= bcd[1] + 4'b0001;
+            else                   bcd[1] <= bcd[1] + 4'b0001;
         end
-        
+        // Horas
         if (tick_1hr) begin
-            if (bcd[3] == 4'b0001 && bcd[2] == 4'b0001) begin
+            if (bcd[3] == 4'b0001 && bcd[2] == 4'b0001) begin // Si son las 11
                 bcd[2] <= 4'b0000;
                 bcd[3] <= 4'b0000;
-            end 
-            else if (bcd[2] == 4'b1001) begin
+            end else if (bcd[2] == 4'b1001) begin             // Si llega a 9
                 bcd[2] <= 4'b0000;
                 bcd[3] <= bcd[3] + 4'b0001;
-            end 
-            else begin
+            end else begin
                 bcd[2] <= bcd[2] + 4'b0001;
             end
         end
     end
 end
 
-// --- MULTIPLEXIÓN DEL DISPLAY ---
-// Utilizamos un contador de 16 bits para el refresco (aprox 762 Hz con reloj de 50MHz)
-reg [15:0] refresh_counter;
-always @(posedge clk or posedge reset) begin
-    if (reset) refresh_counter <= 16'd0;
-    else refresh_counter <= refresh_counter + 16'd1;
+// --- 6. VELOCIDAD DEL MULTIPLEXOR ---
+always @(posedge clk or negedge reset) begin
+    if (!reset) begin // Si el botón manda 0, reinicia el barrido
+        refresh_counter <= 17'd0;
+    end else begin
+        refresh_counter <= refresh_counter + 17'd1;
+    end
 end
 
-// Tomamos los 2 bits más significativos para seleccionar el dígito actual
-wire [1:0] mux_sel = refresh_counter[15:14];
-wire [3:0] current_bcd;
-wire [3:0] uni_h
-wire [3:0] dec_h
+// Extraemos los bits más altos para que cuente 00, 01, 10, 11 lentamente
+wire [1:0] selector = refresh_counter[16:15];
+wire [3:0] uni_h;
+wire [3:0] dec_h;
 
-// Si uni_h y dec_h son 0 se les asigna 1 y 2 respectivamente, else se les asigna el valor que se tienen guaradado en bcd
 assign uni_h = (bcd[2] == 4'b0 && bcd[3] == 4'b0) ? 4'b1 : bcd[2];
 assign dec_h = (bcd[2] == 4'b0 && bcd[3] == 4'b0) ? 4'b2 : bcd[3];
+    
+// --- 7. MULTIPLEXOR (Alterna las pantallas) ---
+// Lógica activa en BAJO (0 enciende la pantalla, 1 la apaga)
+always @(*) begin
+    if (selector == 2'b00) begin
+        display_activo = 4'b1110; // Enciende Dígito 1 (Derecha)
+        numero_actual  = bcd[0];  // Manda Unidades de Minuto
+    end 
+    else if (selector == 2'b01) begin
+        display_activo = 4'b1101; // Enciende Dígito 2
+        numero_actual  = bcd[1];  // Manda Decenas de Minuto
+    end 
+    else if (selector == 2'b10) begin
+        display_activo = 4'b1011; // Enciende Dígito 3
+        numero_actual  = uni_h;  // Manda Unidades de Hora
+    end 
+    else begin // 2'b11
+        display_activo = 4'b0111; // Enciende Dígito 4 (Izquierda)
+        numero_actual  = dec_h;  // Manda Decenas de Hora
+    end
+end
 
-// Multiplexor de BCD (Dataflow)
-assign current_bcd = (mux_sel == 2'b00) ? bcd[0] : // Unidades minuto
-                     (mux_sel == 2'b01) ? bcd[1] : // Decenas minuto
-                     (mux_sel == 2'b10) ? uni_h[2] : // Unidades hora
-                                          dec_h[3];  // Decenas hora
-
-  
-// Selector de dígito (Cátodo común = 0 enciende el dígito correspondiente) (Dataflow)
-assign dig_sel = (mux_sel == 2'b00) ? 4'b1110 : // Activa display 0
-                 (mux_sel == 2'b01) ? 4'b1101 : // Activa display 1
-                 (mux_sel == 2'b10) ? 4'b1011 : // Activa display 2
-                                      4'b0111;  // Activa display 3
-
-// --- DECODIFICADOR BCD A 7 SEGMENTOS (Dataflow) ---
-// Formato de salida: 7'b a_b_c_d_e_f_g (Cátodo común = 1 enciende el segmento)
-assign seg = (current_bcd == 4'h0) ? 7'b1111110 : // 0
-             (current_bcd == 4'h1) ? 7'b0110000 : // 1
-             (current_bcd == 4'h2) ? 7'b1101101 : // 2
-             (current_bcd == 4'h3) ? 7'b1111001 : // 3
-             (current_bcd == 4'h4) ? 7'b0110011 : // 4
-             (current_bcd == 4'h5) ? 7'b1011011 : // 5
-             (current_bcd == 4'h6) ? 7'b1011111 : // 6
-             (current_bcd == 4'h7) ? 7'b1110000 : // 7
-             (current_bcd == 4'h8) ? 7'b1111111 : // 8
-             (current_bcd == 4'h9) ? 7'b1111011 : // 9
-                                     7'b0000000 ; // Apagado por defecto
+// --- 8. DECODIFICADOR 7 SEGMENTOS (CORREGIDO) ---
+// Orden de los bits: 7'b(g)(f)(e)(d)(c)(b)(a)
+// Lógica POSITIVA (1 enciende el LED, 0 lo apaga)
+always @(*) begin
+    if      (numero_actual == 4'b0000) leds = 7'b0111111; // Dibuja 0
+    else if (numero_actual == 4'b0001) leds = 7'b0000110; // Dibuja 1
+    else if (numero_actual == 4'b0010) leds = 7'b1011011; // Dibuja 2
+    else if (numero_actual == 4'b0011) leds = 7'b1001111; // Dibuja 3
+    else if (numero_actual == 4'b0100) leds = 7'b1100110; // Dibuja 4
+    else if (numero_actual == 4'b0101) leds = 7'b1101101; // Dibuja 5
+    else if (numero_actual == 4'b0110) leds = 7'b1111101; // Dibuja 6
+    else if (numero_actual == 4'b0111) leds = 7'b0000111; // Dibuja 7
+    else if (numero_actual == 4'b1000) leds = 7'b1111111; // Dibuja 8
+    else if (numero_actual == 4'b1001) leds = 7'b1101111; // Dibuja 9
+    else                               leds = 7'b0000000; // Apagado
+end
 
 endmodule
